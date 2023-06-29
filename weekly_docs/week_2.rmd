@@ -1,0 +1,368 @@
+---
+title: "Week 2, Jenny Bryan's Tutorial"
+author: "Jack Penzer"
+date: "2023-06-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This week we'll be skimming over Jenny Bryan's excellent set of {purrr} tutorials. We'll be doing our best to condense them into an hour - as a primer for getting down and dirty with the docs next week.
+
+```{r}
+library(purrr)
+library(repurrrsive)
+```
+
+# Background Basics
+
+As we'll often be working with lists and vectors, it'll be helpful to have a quick refresher:
+
+## Vectors & lists
+
+Recall in R, the main difference between a vector and a list, is that a vector can only store one type of data structure whereas lists can store many.
+
+```{r}
+c(1, 2, 3)
+c("1", 2 , 3)#2 and 3 are co-erced to characters
+c(1, 2, "3")  #bigger memory allocation to string so coerces to string=
+c(1,  2, "three") # 1 and 2 are co-erced to characters
+
+list(1, 2, "three") #Nothing gets co-erced
+list("1", "2", "three")
+```
+
+We can index vectors using [] notation or [[]]]
+
+```{r}
+my_vec <- c(3, 2, 1)
+my_vec[1]
+my_vec[2]
+my_vec[3]
+
+#We can drop elements with negatives:
+my_vec[-2] #keeps 1st & 3rd elements
+my_vec[-c(1, 2)] #just keeps the 3rd element
+```
+
+Both vectors and lists can be named:
+
+```{r}
+named_vec <- c(one = 1, two = 2, three = 3)
+
+named_list <- list(one = 1, two = 2, three = 3)
+```
+
+We can index the names of vectors using [] syntax, but not \$
+
+```{r}
+named_vec["one"]
+named_vec[c("one", "two", "three")]
+named_vec$one # error
+```
+
+But we can use \$ for lists:
+
+```{r}
+class(named_list[1])
+class(named_list[[1]])
+```
+
+When indexing lists, [] will return a list, [[]] will return the element itself (it's important to distinguish the list from its elements)
+
+```{r}
+named_list[["one"]]
+named_list[[1]]
+```
+
+## str()
+
+Before you can work efficiently with a list in the wild, you'll need to understand its structure. Jenny Bryan gives three things to be on the lookout for:
+
+-   What length is the list, what depth do its components have?
+
+-   Do the components have the same data structure, i.e. are they homogeneous?
+
+-   Do the components have names?
+
+It's important to keep note of the answers to all three.
+
+Jenny Bryan's repurrrsive package will provide us with a few helpful lists (consider re-using these in future weeks when demonstrating concepts!)
+
+the got_chars list has a bunch of nested lists for Game of Thrones characters. We can use str() to inspect the list
+
+```{r}
+got <- repurrrsive::got_chars
+got
+length(got)
+str(got)
+length(got[[1]])
+```
+
+
+## Lists sometimes have ugly properties
+
+When dealing with vectors, many operations are vectorised (apply to each element in the vector) right out of the box:
+
+```{r}
+c(1, 2, 3) ^ 2
+```
+
+But this isn't true with lists:
+
+```{r}
+list(1, 2, 3) ^ 2
+```
+
+# List extraction -  Game of Thrones characters
+ and we'll set list.len = 5 so as not to spam the console:
+
+```{r}
+str(got, list.len = 2)
+```
+
+We can also look at a specific got character:
+
+```{r}
+(first_character <- got[[1]])
+```
+
+Then index by names:
+
+```{r}
+names(first_character)
+first_character$name #let R STudio autocorrect help you!
+```
+
+Let's say we want to get the names of the first 10 characters out of the got object, it would be nice if we could just index 1:10, and type \$name:
+
+```{r}
+got[[1:10]]$name
+```
+
+So that doesn't work, in fact we can't even get the 1:10 index this way:
+
+```{r}
+got[[1:10]]
+```
+
+Using one square bracket won't help, either:
+
+```{r}
+got[1:10]
+got[1:10]$name
+```
+
+## Map to the rescue
+
+It's also important to remember `map()` always returns a list. However, there are `map_` variants which return other types. When not comfortable with lists, this predictable fact about `map` might seem ugly or inconvenient, but over time it becomes quite the opposite.
+
+How do we use map to get the names of the first 10 characters? Because each element in got[1:10] has a $name object associated with it, we can use this to our advantage:
+
+```{r}
+map(got[1:10], "name")
+map(got[1:10], "born")
+map(got[1:10], "tower")
+map(got, "name")
+map(got, `[`, "name")
+```
+
+What data structure is the output?
+
+When using map for extraction purposes, we can also use index. as the name is contained in the third index, we could access it by passing in the number 3:
+
+```{r}
+map(got[1:10], 3)
+map(got[1:10], 4)
+```
+
+
+Compare the output of the previous call with the output of map_chr
+
+```{r}
+names_chr <- map_chr(got[1:10], "name")
+class(names_chr)
+```
+
+What did map_chr do that `map` didn't?
+```{r}
+names_1_10 <- map(got[1:10], "name")
+class(unlist(names_1_10))
+```
+
+# Mapping functions (going beyond extraction)
+
+As we're learning {purrr}, we'll focus on how to apply functions to lists with {purrr}'s map functions. It'll be important to keep this structure in mind:
+
+`map(your_list, your_function)`
+
+when using ellipsis
+`map(your_list, your_function, ...)` # where ... is your additional argument(s) to your_function
+
+```{r}
+dataframe <- data.frame()
+dummy_function <- function(data, ..., na.rm = TRUE)
+map(my_list, dummy_function, data = dataframe, na.rm = TRUE)
+```
+
+When you type ?map, you'll notice that map also takes '...', this is a way to feed in additional arguments to `your_function`. However, this list is not iterated over. This can start to get quite confusing and wordy, so let's look at an example.
+
+## Existing functions
+
+Demo lists:
+```{r}
+aliases <- set_names(map(got_chars, "aliases"), map_chr(got_chars, "name"))
+(aliases <- aliases[c("Theon Greyjoy", "Asha Greyjoy", "Brienne of Tarth")])
+
+```
+
+We can choose to feed in a function that has already been defined prior to our map call. We'll define a function, my_fun and show how we do that.
+
+
+```{r}
+my_fun <- function(x) {
+  paste(x, collapse = "|")
+} 
+paste(aliases$`Theon Greyjoy`, "|")
+paste(aliases$`Asha Greyjoy`, "|")
+
+map(aliases, my_fun)
+
+map(aliases, my_fun, collapse = ";")
+```
+
+For each of the characters in our aliases list, we get a pasted version of their aliases, separated by |. If we wanted to separate by ";" we'd have to edit my_fun, as there is currently no way to tell my_fun what to separate by. Or, we could use an anonymous function and `...`  to feed additional arguments to paste.
+```{r}
+map(aliases, paste, collapse = ";")
+```
+
+Anonymous functions
+```{r}
+map(aliases, function(x) paste(x, collapse = ";"))
+map(aliases, function(x, collapse) paste(x, collapse = "!"))
+```
+
+We could also get used to the anonymous function with a formula:
+```{r}
+map(.x = aliases, .f = ~ paste(.x, collapse = ";"))
+```
+
+We'll need the formula notation later when we get into `map2` and `pmap` territory. Plus it lets us build pipes etc. on the fly:
+```{r}
+map(aliases, ~ paste(.x, collapse = ";") %>%
+      stringr::str_detect("Kinslayer")
+    )
+```
+
+
+Exercises:
+1. Create a list allegiances that holds the characters’ house affiliations.
+```{r}
+allegiances <- map(got, "allegiances")
+```
+
+2. Create a character vector nms that holds the characters’ names.
+```{r}
+nms <- map_chr(got, "name")
+```
+
+3. Apply the names in nms to the allegiances list via set_names.
+```{r}
+allegiances <- allegiances %>%
+  setNames(nms)
+```
+
+4. Re-use the code from above to collapse each character’s vector of allegiances down to a string.
+```{r}
+map(allegiances, my_fun)
+```
+
+We said that any elements passed via ... would be used “as is”. Specifically they are not used in a vectorized fashion. What happens if you pass collapse = c(" | ", " * ")? Why is that?
+
+1. Create a list allegiances that holds the characters’ house affiliations.
+```{r}
+names <- map(got_chars, "name")
+names(got_chars) <- names
+
+map(got_chars, "allegiances")
+```
+
+2.Create a character vector nms that holds the characters’ names.
+```{r}
+nms <- map(got_chars, "name")
+```
+
+3. Re-use the code from above to collapse each character’s vector of allegiances down to a string.
+```{r}
+allegiances <- map(got_chars, "allegiances")
+allegieances <- allegiances %>%
+  setNames(nms)
+```
+
+4. Re-use the code from above to collapse each character’s vector of allegiances down to a string.
+```{r}
+map(allegiances, paste, collapse = "|")
+```
+
+5. We said that any elements passed via ... would be used “as is”. Specifically they are not used in a vectorized fashion. What happens if you pass collapse = c(" | ", " * ")? Why is that?
+```{r}
+map(allegiances, paste, collapse = c("|", ", ", "* ")) # just takes the first element of the character vector?
+
+map(allegiances, paste, collapse = c(",", "|", "* "))
+```
+
+
+## Recap
+
+shortcut extraction with
+map(list, "name")
+or by index
+map(list, index)
+
+Existing functions, or anonymous functions, or bare function names, or anonymous function with formula notation.
+map(aliases, my_fun)
+map(aliases, function(x) paste(x, collapse = "|")) 
+map(aliases, paste, collapse = "|")
+map(aliases, ~ paste(.x, collapse = " | "))
+
+## Multiple lists quick demo - map2 and pmap
+```{r}
+nms <- got_chars %>% 
+  map_chr("name")
+birth <- got_chars %>% 
+  map_chr("born")
+
+```
+
+
+```{r}
+my_fun <- function(x, y) paste(x, "was born", y)
+
+map2_chr(.x = nms, .y = birth, .f = my_fun) %>% head()
+
+map2_chr(.x = nms[16:18], .y = birth[16:18], ~ paste(.x, "was born", .y)) %>% tail()
+```
+
+```{r}
+df <- got_chars %>% {
+  tibble::tibble(
+    name = map_chr(., "name"),
+    aliases = map(., "aliases"),
+    allegiances = map(., "allegiances")
+  )
+}
+
+
+my_fun <- function(name, aliases, allegiances) {
+  paste(name, "has", length(aliases), "aliases and",
+        length(allegiances), "allegiances")
+}
+df %>% 
+  pmap_chr(my_fun) %>% 
+  tail()
+
+pmap_chr(.l = df, .f = ~ my_fun(..1, ..2, ..3))
+names(df)
+```

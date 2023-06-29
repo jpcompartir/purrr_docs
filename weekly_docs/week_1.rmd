@@ -1,0 +1,175 @@
+---
+title: "Intro to Purrr bookclub"
+author: "Jack Penzer"
+date: "2023-06-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Book Club Set Up
+
+For the past ~3 months we were working through the `dplyr` documentation - so if you're looking to get to grips with some of the more esoteric properties of that package, head to those videos!
+
+Today, we're moving onto `purrr`, the tidyverse package for functional programming and manipulating vectors.
+
+For those new to book clubs, please keep the R4DS community guidelines and general standards of decency in mind; there is no tolerance for prejudice or bigotry of any kind - we're all here to have a good time and learn things along the way. Keep an open mind and be inclusive!
+
+#Overview
+
+Given that `purrr` is more complex than `dplyr`, I'm suggesting that we front load this club with a couple of weeks of tutorials - I'm open to which, but my suggestion would be to work through `https://www.rebeccabarter.com/blog/2019-08-19_purrr#simplest-usage-repeated-looping-with-map`
+and some of Jenny Bryan's tutorials (time of writing github.io (jennybc.github.io/purrr-tutorial/) unavailable, repo: `https://github.com/jennybc/purrr-tutorial`)
+
+There is also an article from RStudio education:
+`https://education.rstudio.com/blog/2020/07/teaching-the-tidyverse-in-2020-part-4-when-to-purrr/#reading-in-many-files-at-once`
+
+"so, when would be a good time in the introductory science curriculum to introduce these topics? 
+
+I would recommend doing so after covering data visualisation, wrangling, and import, but before going into modeling and inference"
+
+## So what's functional programming, and why do I need to know about it?
+
+In computer science, functional programming is a programming paradigm where programs are constructed by applying and composing functions. It is a declarative programming paradigm in which **function definitions are trees of expressions that map values to other values**, rather than a sequence of imperative statements which update the running state of the program.
+
+https://en.wikipedia.org/wiki/Functional_programming
+
+## Terminology
+
+Some words that we'll hear sometimes, which sound like magic but aren't:
+
+**Higher-order** functions are functions that can either take other functions as arguments or return them as results.
+
+a programming language is said to have **first-class** functions if it treats functions as first-class citizens. This means the language supports passing functions as arguments to other functions, returning them as the values from other functions, and assigning them to variables or storing them in data structures.
+
+**Pure functions** (or expressions) have no side effects (memory or I/O)
+
+**functionals** they take another function as an argument, or return functions as their outputs
+
+# Iterative programming (top) vs Functional programming (bottom)
+Javascript iterative programming
+```{r iterative, eval = FALSE}
+const numList = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+let result = 0;
+for (let i = 0; i < numList.length; i++) {
+  if (numList[i] % 2 === 0) {
+    result += numList[i] * 10;
+  }
+}
+```
+
+Javascript functional programming
+```{r functional, eval = FALSE}
+const result = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+               .filter(n => n % 2 === 0)
+               .map(a => a * 10)
+               .reduce((a, b) => a + b);
+```
+
+## Doing the same thing lots of times
+
+When we're new to programming, we find ourselves doing things like this:
+```{r, eval = FALSE}
+data_one <- readr::read_csv("data/week1/file_1.csv")
+data_two <- readr::read_csv("data/week1/file_2.csv")
+data_three <- readr::read_csv("data/week1/file_3.csv")
+data_four <- readr::read_csv("data/week1/file_4.csv")
+
+data_all <- rbind(data_one, data_two, data_three, data_four)
+```
+
+
+## Iterating in R, for loops
+
+Howev
+
+```{r, eval = FALSE}
+base_dir <- "data/week1/"
+file_pattern <- "file_"
+
+for (i in 1:4) {
+  file_name <- paste0(base_dir, file_pattern, i, ".csv")
+  data <- readr::read_csv(file_name) # how to do this without reading in data like that?
+  assign(paste0("data_", i), data) 
+}
+```
+
+
+We can do most things with for loops (and these are by no means creative uses)
+
+```{r}
+#Get column names of mtcars
+for (i in seq_along(mtcars)) {
+  print(names(mtcars)[i])
+}
+
+#Print the mean value for each column in mcars
+for (i in seq_along(mtcars)) {
+  print(paste("Mean of", names(mtcars)[i], ":", mean(mtcars[[i]], na.rm = TRUE)))
+}
+
+#Get the unique values for each column of mtcars
+for (i in seq_along(mtcars)) {
+  print(paste("Unique values of", names(mtcars)[i], ":"))
+  print(unique(mtcars[[i]]))
+}
+
+#impute missing values (just dummy code)
+for (i in seq_along(mtcars)) {
+  mtcars[[i]][is.na(mtcars[[i]])] <- mean(mtcars[[i]], na.rm = TRUE)
+}
+
+
+```
+
+## Iterating in R, *apply
+
+But there's a simpler api if we use the apply set of functions
+
+```{r}
+lapply(mtcars, mean, na.rm = TRUE)
+lapply(mtcars, median, na.rm = TRUE)
+lapply(mtcars, function(x) c(mean = mean(x, na.rm = TRUE), median = median(x, na.rm = TRUE)))
+lapply(mtcars, function(x) any(is.na(x)))
+```
+
+There is a better way, but first... lists
+
+# Lists
+
+Another key reason is for learning {purrr} is to deal with lists. As an R user, you're probably more used to performing analyses on data frames than lists. But **/Morpheus** what if I told you a data frame was just a list of lists? 
+
+Nested lists can be particularly difficult to work with, even for experienced programmers.
+
+```{r}
+user_profile <- list(name = "jack", 
+     hobbies = list(outdoor = list("running", "hiking"),
+                    indoor = list("swimming", "reading")),
+     job_title = list("data scientist"),
+     education_history = list(university = "Bristol", school = "Exmouth")
+     )
+
+user_profile$hobbies$outdoor[[1]]
+user_profile[["hobbies"]][["outdoor"]][[1]]
+user_profile[["hobbies"]][["outdoor"]][[2]]
+```
+
+What if we wanted to iterate over this list to extract the names of all hobbies that are outdoor hobbies:
+```{r}
+for(hobby_type in names(user_profile$hobbies)) {
+  if(hobby_type == "outdoor") {
+    for (hobby in unlist(user_profile$hobbies[[hobby_type]])) {
+      print(hobby)
+  }
+  }
+}
+```
+
+This type of code takes a long time for me to write, personally, it's difficult to keep track of where in the nested structure I am, it's hard to combine the for loop, if statement, unlisting and filtering.
+
+```{r}
+library(purrr)
+```
+
+Next week, depending on the outcome of this meeting, we'll either  begin going through the documentation directly, or a tutorial (or two)
