@@ -1,0 +1,319 @@
+---
+title: "lmap, modify, predicate functionals"
+author: "Jack Penzer"
+date: "2023-07-16"
+output: 
+  rmdformats::readthedown:
+    code_folding: show
+    toc_depth: 2
+    use_bookdown: true
+# template:
+#   bootstrap: 5
+#   bootswatch: united
+#   theme: arrow-light
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+
+```{r}
+library(purrr)
+library(dplyr)
+```
+
+
+Last week Sarah took us through `map2()` and `pmap()`, this weekwe'll look at `lmap()`, `modify()` and some predicate functionals 
+
+Reminder: predicate functionals return TRUE or FALSE
+
+# lmap
+
+What is it?
+
+```{r}
+?lmap
+```
+
+"Apply a function to list-elements of a list"
+
+What on earth is a list-element of a list? An element inside a list that is a list itself
+
+```{r}
+set.seed(1014)
+maybe_rep <- function(x) {
+  n <- rpois(1, 2)
+  set_names(rep_len(x, n), paste0(names(x), seq_len(n)))
+}
+
+
+
+# The output size varies each time we map f()
+(x <- list(a = 1:4, b = letters[5:7], c = 8:9, d = letters[10]))
+```
+
+
+lmap(), lmap_at() and lmap_if() are similar to map(), map_at() and map_if(), except instead of mapping over .x[[i]], they instead map over .x[i]. Recall that [[]] returns object itself, [] returns a list with object in. lmap only takes a list as input (not vectors)
+
+```{r}
+lmap(list(1:5), maybe_rep) # Fine
+```
+
+Doesn't take vectors:
+
+```{r, eval = FALSE}
+lmap(c(1:5), maybe_rep) # Error
+```
+
+From the docs:
+The lmap function has several advantages:
+
+- It makes it possible to work with functions that exclusively take a list.
+- It allows .f to access the attributes of the encapsulating list, like names().
+- It allows .f to return a larger or small list than it receives changing the size of the output.
+
+## How does it work?
+
+```{r}
+set.seed(187)
+x |> lmap(maybe_rep)
+```
+
+```{r}
+set.seed(123)
+x |> map(maybe_rep)
+```
+
+`lmap()` calls `lmap_helper()`
+```{r}
+lmap_helper <- function (.x, .ind, .f, ..., .else = NULL, .purrr_error_call = caller_env()) 
+{
+    .f <- rlang::as_function(.f, call = .purrr_error_call)
+    if (!is.null(.else)) {
+        .else <- rlang::as_function(.else, call = .purrr_error_call)
+    }
+    out <- vector("list", length(.x))
+    for (i in seq_along(.x)) {
+        if (.ind[[i]]) {
+            res <- .f(.x[i], ...)
+        }
+        else if (is.null(.else)) {
+            res <- .x[i]
+        }
+        else {
+            res <- .else(.x[i], ...)
+        }
+        if (!is.list(res)) {
+            cli::cli_abort("{.code .f(.x[[{i}]])} must return a list, not {.obj_type_friendly {res}}.", 
+                call = .purrr_error_call)
+        }
+        out[[i]] <- res
+    }
+    if (is.data.frame(.x)) {
+        out <- lapply(out, as.data.frame)
+        list_cbind(out)
+    }
+    else {
+        list_flatten(out)
+    }
+}
+```
+
+## Notes on documentation
+
+`...` Additional arguments passed on to the mapped function.
+
+ We now generally recommend against using ... to pass additional (constant) arguments to .f. Instead use a shorthand anonymous function:
+
+<!-- # Instead of -->
+<!-- x |> map(f, 1, 2, collapse = ",") -->
+<!-- # do: -->
+<!-- x |> map(\(x) f(x, 1, 2, collapse = ",")) -->
+
+
+## Variants
+
+### lmap_if
+
+Similar to lmap, except it has two new arguments .p, which is a predicate function (a function that returns TRUE/FALSE) and .else which is what to do when the predicate function returns FALSE.
+
+```{r}
+# Or only where a condition is satisfied
+x |> lmap_if(is.character, maybe_rep) |> str()
+```
+
+### lamp_at
+
+Similar to `lmap_if()`, but you refer to the elements via a vector rather than a predicate function.
+
+```{r}
+# We can apply f() on a selected subset of x
+x |> lmap_at(c("a", "d"), maybe_rep) |> str()
+```
+
+# modify
+
+Key difference between the `modify()` and `map()` family is that `map` and its variants (chr, int, lgl etc.) always return the same data type. `modify` returns the same data type as the input.
+
+`Modify` takes a vector, list, or data frame object as input.
+
+```{r}
+modify(c(1:5), ~ .x + 1)
+modify(list(1:5), ~ .x +2)
+```
+
+When we feed modify a data frame as input, it returns a data frame as output
+
+```{r}
+iris %>%
+  modify(as.character) %>%
+  tibble::tibble()
+```
+
+Can replace some of the mutate(across()) stuff people often want to do :D
+
+## modify_if
+
+```{r}
+iris %>%
+  modify_if(.p = is.factor, .f = as.character) %>%
+  tibble::tibble()
+```
+
+versus
+
+```{r}
+iris %>%
+  map_if(is.factor, as.character) 
+```
+
+
+## modify_at
+
+Similar to lmap_at etc. we can use a vector of indices or names
+
+```{r}
+iris %>%
+  modify_at(c(1, 2, 3, 4), as.integer) %>%
+  tibble::tibble()
+```
+
+modify_depth
+```{r}
+x <- list(a = list(foo = 1:2, bar = 3:4), b = list(baz = 5:6))
+str(x)
+
+modify_depth(.x = x, .depth = 2, .f = function(x) x + 1)
+```
+
+
+
+## modify_tree
+
+```{r}
+x <- list(list(a = 2:1, c = list(b1 = 2), b = list(c2 = 3, c1 = 4)))
+x |> str()
+
+
+# Transform each leaf
+x |> modify_tree(leaf = \(x) x + 100) |>  str()
+
+
+# Recursively sort the nodes
+sort_named <- function(x) {
+  nms <- names(x)
+  if (!is.null(nms)) {
+    x[order(nms)]
+  } else {
+    x
+   }
+}
+x |> modify_tree(post = sort_named) |> str()
+```
+
+
+# predicate functionals
+
+Predicate functionals are functions which return TRUE or FALSE.
+
+## detect
+
+Detect accepts a list or vector and will find the value of the first match. 
+
+Similar to map it takes .x and .f as inputs, as well as `...`, docs say '	
+Additional arguments passed on to .p.' but I'm assuming it means .f, or they meant to use .p as the function rather than .f.
+
+```{r}
+vec <- c(5:20)
+detect(vec, ~ .x > 10) 
+detect_index(vec, ~.x > 10)
+```
+
+We get a new (I think?) argument, .dir which asks which side of the vector and takes 'forward' or 'backward as inputs. 
+
+```{r}
+detect(vec, ~ .x > 10, .dir = "backward")
+```
+Returns 20 as we'd expect, as from the end of the vector, the first element which is > 10 is the first element - 20.
+
+```{r}
+detect_index(vec, ~ .x > 10, .dir = "backward")
+```
+
+returns 16 as we'd expect, as len(5:20) == 16
+
+## every, some, none
+
+They work just like `any()` and `all()`, with the negated version of all being none.
+
+```{r}
+x <- list(0:10, 5.5)
+x |> every(is.numeric)
+#> [1] TRUE
+```
+
+
+```{r}
+x |> every(is.integer)
+#> [1] FALSE
+```
+
+
+```{r}
+x |> some(is.integer)
+#> [1] TRUE
+```
+
+
+```{r}
+x |> none(is.character)
+#> [1] TRUE
+```
+
+## has_element
+
+Function simply checks if a list or atomic vector contains an object. 
+
+```{r}
+x <- list(1:10, 5, 9.9)
+has_element(x, 1:10)
+```
+
+Essentially this is checking if there is `some()` element which is identical to any of the other elements:
+```{r eval = FALSE}
+function (.x, .y) 
+{
+    some(.x, identical, .y)
+}
+```
+
+Ran out of time in prep !: Next week continue at head_while and tail_while
+```{r}
+list(x = sample(c(TRUE, FALSE), 100, replace = TRUE), y = 1:100) |>
+  list_transpose(simplify = FALSE) |>
+  modify_if("x", \(l) list(x = l$x, y = l$y * 100)) |>
+  list_transpose()
+```
+
