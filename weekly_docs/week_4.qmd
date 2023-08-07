@@ -1,0 +1,301 @@
+---
+author: Sarah
+title: "`map2` and `pmap`"
+subtitle: "Tidyverse docs bookclub: {purrr}"
+date: 2023-07-13
+
+format: 
+  revealjs:
+    embed-resources: true
+execute:
+  echo: true
+  eval: false
+---
+
+::: columns
+::: {.column width="40%"}
+### Function
+
+-   `map` and variants:
+-   `map2` and variants:
+-   `pmap` and variants:
+:::
+
+::: {.column width="60%"}
+### Input
+
+-   1 list/vector
+-   2 lists/vectors
+-   as many lists/vectors as you want
+:::
+:::
+
+# `map2`
+
+## Approach
+
+![](https://dcl-prog.stanford.edu/images/map2.png)
+
+## Variants
+
+```{r}
+#| label: map2-variants
+map2(.x, .y, .f, ..., .progress = FALSE)
+
+map2_lgl(.x, .y, .f, ..., .progress = FALSE)
+
+map2_int(.x, .y, .f, ..., .progress = FALSE)
+
+map2_dbl(.x, .y, .f, ..., .progress = FALSE)
+
+map2_chr(.x, .y, .f, ..., .progress = FALSE)
+
+map2_vec(.x, .y, .f, ..., .ptype = NULL, .progress = FALSE)
+
+walk2(.x, .y, .f, ..., .progress = FALSE)
+```
+
+`.x` and `.y` should have the same length; if one has length 1, it will be recycled.
+
+`.progress = TRUE` returns a progress bar.
+
+`.progress = "some_name"` returns a named progress bar.
+
+## `.f`: `...` vs. anonymous functions
+
+The {purrr} authors recommend against using `...` for arguments.
+
+```{r}
+#| label: map2-no-ellipsis
+#| code-line-numbers: "4,10,11"
+library(purrr)
+data(cars)
+x <- cars |> head()
+
+# Instead of
+x |> map(paste, 1, 2, collapse = ",")
+# do:
+x |> map(\(x) paste(x, 1, 2, collapse = ","))
+# or
+x |> map(.x = _, 
+         .f = ~ paste(.x, 1, 2))
+
+```
+
+## Example: predicting values
+
+```{r}
+#| label: example-mtcars-prediction
+#| eval: true
+#| code-line-numbers: "6,7,8,9,10"
+library(purrr)
+data("mtcars")
+by_cyl <- mtcars |> split(mtcars$cyl)
+
+# mods <- by_cyl |> map(\(df) lm(mpg ~ wt, data = df))
+mods <- by_cyl |> map(.x = _,
+                      .f = ~ lm(mpg ~ wt, data = .x))
+map2(.x = mods, 
+     .y = by_cyl, 
+     .f = predict)$`4`
+
+```
+
+## Neat shortcut: instead of `rowwise`
+
+Taken from [Map with multiple inputs](https://dcl-prog.stanford.edu/purrr-parallel.html).
+
+Tibbles and data.frames are lists!
+So we can use `map2` directly with `mutate`.
+
+```{r}
+#| label: make-new-tibble
+#| eval: true
+
+library(tidyverse)
+
+df <-
+  tibble(
+    a = c(1, 2, 4),
+    b = c(6, 5, 3),
+    c = c(8, 5, 3),
+    d = c("a", "b", "c")
+  )
+```
+
+## Neat shortcut: instead of `rowwise` (2)
+
+Instead of using the syntax with `rowwise` and `ungroup`, we can go with `map2`.
+
+::: columns
+::: column
+### Rowwise approach
+
+```{r}
+#| label: with-rowwise
+#| eval: true
+
+df |>  
+  rowwise() |>  
+  mutate(min = min(a, b)) |>  
+  ungroup()
+```
+:::
+
+::: column
+### Shortcut with map2
+
+```{r}
+#| label: instead-of-rowwise
+#| eval: true
+
+df |> 
+  mutate(min = map2_dbl(a, b, min))
+
+```
+:::
+:::
+
+# `pmap`
+
+## Approach
+
+![](https://dcl-prog.stanford.edu/images/pmap-list.png)
+
+## Variants
+
+```{r}
+#| label: variants-pmap
+
+pmap(.l, .f, ..., .progress = FALSE)
+
+pmap_lgl(.l, .f, ..., .progress = FALSE)
+
+pmap_int(.l, .f, ..., .progress = FALSE)
+
+pmap_dbl(.l, .f, ..., .progress = FALSE)
+
+pmap_chr(.l, .f, ..., .progress = FALSE)
+
+pmap_vec(.l, .f, ..., .ptype = NULL, .progress = FALSE)
+
+pwalk(.l, .f, ..., .progress = FALSE)
+
+```
+
+## `.l`
+
+Lists
+
+-   List elements must have the same length.
+-   *Exception:* Vectors of length 1 will be recycled to any length.
+
+We can input data.frames!
+
+-   Then, `.f` is applied rowwise.
+
+
+## `.f` 
+-   We need to supply as many arguments in `.f` as elements in `.l` or vectors in the data.frame.
+-   If we have too many, we can use `...` to absorb unused components
+
+
+## Matching arguments in `.f`
+
+```{r}
+#| label: pmap-match-arguments-by-name
+#| eval: true
+# Matching arguments by name
+x <- list(1, 1, 1)
+y <- list(10, 20, 30)
+z <- list(100, 200, 300)
+l <- list(a = x, b = y, c = z)
+
+pmap(l, function(c, b, a) (a + c) * b)
+pmap(l, ~ (..1 + ..3) * ..2)
+
+```
+## Vectorizing a function over multiple arguments
+
+```{r}
+#| label: pmap-vectorized-function
+#| eval: true
+fruit_df <- data.frame(
+  x = c("apple", "banana", "cherry"),
+  pattern = c("p", "n", "h"),
+  replacement = c("P", "N", "H"),
+  stringsAsFactors = FALSE
+  )
+
+pmap_chr(fruit_df, gsub)
+```
+
+
+
+
+## Neat shortcut for data.frames
+
+```{r}
+#| label: pmap-shortcut-dataframes
+#| eval: true
+
+# no need to specify column names, but we can't use mutate
+df |> pmap(.l = _,
+               .f = max)
+
+# using mutate, but we need to specify column names
+df |> 
+  mutate(min_value = pmap_int(.l = list(a, b, c, d),
+                              .f = function(a, b, ...) max(a, b)))
+
+```
+
+# Exercise
+
+Taken from [Advanced R Solutions](https://advanced-r-solutions.rbind.io/functionals.html#map-variants)
+
+## `map2` v. `map`
+
+Explain how the following code transforms a data frame using functions stored in a list.
+
+```{r}
+#| label: pmap-approach
+#| eval: true
+
+trans <- list(
+  disp = function(x) x * 0.0163871,
+  am = function(x) factor(x, labels = c("auto", "manual"))
+)
+
+nm <- names(trans)
+mtcars[nm] <- map2(.x = trans, 
+                   .y = mtcars[nm], 
+                   .f = function(f, var) f(var))
+mtcars |> select(disp, am) |> head()
+```
+---
+
+Compare and contrast the `map2()` approach to this `map()` approach:
+
+```{r}
+#| label: map-approach
+#| eval: true
+# map2 approach
+# mtcars[nm] <- map2(.x = trans, 
+#                    .y = mtcars[nm], 
+#                    .f = function(f, var) f(var))
+data(mtcars)
+mtcars[nm] <- map(.x = nm, 
+                  .f = ~ trans[[.x]](mtcars[[.x]]))
+mtcars |> select(disp, am) |> head()
+```
+## Answer
+
+In the first approach, the list of functions (`trans`) and the selected data frame columns (`mtcars[nm]`) *are supplied to* `map2()`.
+`map2()` creates an anonymous function (`f(var)`) which applies the functions to the variables when `map2()` iterates over their (similar) indices.
+
+The `map()` variant does basically the same.
+However, it directly iterates over the names (`nm`) of the transformations.
+Therefore, the *data frame columns are selected during the iteration.* 
+
+Also, with `map(2)`, we can change the names in `.f`, making the function more readeable.
