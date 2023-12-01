@@ -1,0 +1,179 @@
+---
+author: Sarah
+title: "`furrr`"
+subtitle: "Tidyverse docs bookclub: {purrr}"
+date: 2023-11-30
+
+format: 
+  revealjs:
+    embed-resources: true
+execute:
+  echo: true
+  eval: true
+---
+
+# `furrr`'s goal
+
+> The goal of furrr is to combine purrr's family of mapping functions with future's parallel processing capabilities.
+> The result is near drop in replacements for purrr functions such as map() and map2_dbl(), which can be replaced with their furrr equivalents of future_map() and future_map2_dbl() to map in parallel.
+
+-- `furrr` documentation
+
+
+# Implementations
+
+Every variant (`_dbl` etc.) of the following functions has been implemented:
+
+-   `map()`
+-   `map2()`
+-   `pmap()`
+-   `walk()`
+-   `imap()`
+-   `modify()`
+
+# Setup
+
+```{r}
+#| label: setup
+#| echo: false
+
+library(dplyr)
+```
+
+```{r}
+#| label: example-furrr
+#| code-line-numbers: "6,7,8,9"
+library(furrr)
+library(purrr)
+
+map(c("hello", "world"), ~.x)
+
+# Set a "plan" for how the code should run.
+plan(multisession, workers = 2)
+
+future_map(c("hello", "world"), ~.x, .progress = TRUE)
+
+plan(sequential)
+```
+
+
+# Use on a data frame
+
+::: {.callout-note}
+Advantages in regards to `data.table` and `dtplyr` ?
+:::
+
+```{r}
+#| label: example-data-frame
+
+plan(multisession, workers = 4)
+
+palmerpenguins::penguins |> 
+  mutate(bill_ratio = future_map2_dbl(.x = bill_length_mm, .y = bill_depth_mm, .f = ~ .x / .y)) |> 
+  select(species, island, year, bill_ratio)
+
+plan(sequential)
+```
+
+
+# Arguments
+
+Most of these arguments, we know, but `.options`, `.env_globals` and `.progress` are new.
+
+```{r}
+#| label: arguments
+#| eval: false
+
+future_map2(
+  .x,
+  .y,
+  .f,
+  ...,
+  .options = furrr_options(),
+  .env_globals = parent.frame(),
+  .progress = FALSE
+)
+```
+
+
+## `furrr_options`
+
+```{r}
+#| label: furrr-options
+#| eval: false
+#| code-line-numbers: "5,6,7,8,9,10"
+
+furrr_options(
+  ...,
+  stdout = TRUE,
+  conditions = "condition",
+  globals = TRUE,
+  packages = NULL,
+  seed = FALSE,
+  scheduling = 1,
+  chunk_size = NULL,
+  prefix = NULL
+)
+```
+
+---
+
+### Globals
+
+By default, `furrr` gathers globals automatically and upfront (once).
+If we want to control this, we can use the `globals` argument.
+`packages` works similarly.
+
+```{r}
+#| label: furrr-options-globals
+#| eval: false
+#| code-line-numbers: "2,9"
+
+numbers <- 1:2
+config <- furrr_options(globals = FALSE)
+
+my_func <- function(x, some_numbers = numbers){ paste(x, some_numbers) }
+
+plan(multisession, workers = 2)
+future_map(c("hello", "world"),
+           my_func,
+           .options = config)
+
+future_map(c("hello", "world"),
+           my_func)
+
+plan(sequential)
+
+```
+
+---
+
+### `scheduling` and `chunk_size`
+
+These arguments are used to control how the work is distributed across workers.
+`chunk_size` is the number of elements to send to each worker at a time.
+`scheduling` is the strategy used to distribute the work.
+
+One can either use the `scheduling` or the `chunk_size` argument.
+If both are used, `chunk_size` takes precedence.
+
+## Progress bar
+
+::: {.callout-tip}
+This functionality will soon be deprecated.
+Then, we'll need to use the `progressr` package.
+:::
+
+```{r}
+#| label: progress-bar
+#| code-line-numbers: "8"
+
+plan(multisession, workers = 2)
+
+future_map(c("hello", "world"),
+           ~ {
+             Sys.sleep(1)
+             print(.x)
+           },
+           .progress = TRUE)
+```
